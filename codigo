@@ -27,7 +27,7 @@ altura_real = 1.75
 longitud_real_antebrazo = 0.227
 
 # Variables para visualización
-VECTOR_SCALE = 50
+VECTOR_SCALE = 200          #para aumentrar el tamaño de LOS VECTORES estaba en 50 yo puse en 200 asi se ve bien
 MIN_VEL_THRESHOLD = 0.001  # Umbral mínimo para dibujar el vector de velocidad
 MIN_ACC_THRESHOLD = 0.005  # Umbral mínimo para dibujar el vector de aceleración
 
