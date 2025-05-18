@@ -11,7 +11,7 @@ import pickle
 mp_pose = mp.solutions.pose
 
 # Configuración inicial
-video_path = 'codigo/videoATrackear.mp4'
+video_path = 'videoGym.mp4'
 if not os.path.exists(video_path):
     print(f"Error: Archivo de video no encontrado en {video_path}")
     exit()
@@ -30,7 +30,7 @@ longitud_real_antebrazo = 0.227
 VECTOR_SCALE = 50
 MIN_VEL_THRESHOLD = 0.001  # Umbral mínimo para dibujar el vector de velocidad
 MIN_ACC_THRESHOLD = 0.005  # Umbral mínimo para dibujar el vector de aceleración
-ventana = 3  # Definimos ventana aquí para usarla en el suavizado en tiempo real
+ventana = 7  # Definimos ventana aquí para usarla en el suavizado en tiempo real
 
 # Estructuras de datos
 datos_completos = []
