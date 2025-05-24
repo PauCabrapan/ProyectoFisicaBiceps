@@ -1,7 +1,7 @@
 import cv2
 import mediapipe as mp
 import os
-import pandas as pd  # Mantenemos Pandas como estaba
+import pandas as pd
 import math
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,16 +27,19 @@ altura_real = 1.75
 longitud_real_antebrazo = 0.227
 
 # Variables para visualización
-VECTOR_SCALE = 200          #para aumentrar el tamaño de LOS VECTORES estaba en 50 yo puse en 200 asi se ve bien
+VECTOR_SCALE = 150 #Agrande un pooco los vectores
 MIN_VEL_THRESHOLD = 0.001  # Umbral mínimo para dibujar el vector de velocidad
 MIN_ACC_THRESHOLD = 0.005  # Umbral mínimo para dibujar el vector de aceleración
+ventana = 7  # Definimos ventana aquí para usarla en el suavizado en tiempo real
 
 # Estructuras de datos
 datos_completos = []
 datos_visibles = []
 previous_position = None
 previous_velocity = [0, 0]
-factor = None  # Inicializamos factor aquí para usarlo en tiempo real
+factor = None
+smoothed_acc_x = 0  # Aceleración suavizada en x
+smoothed_acc_y = 0  # Aceleración suavizada en y
 
 # Procesamiento del video en una sola pasada
 cap = cv2.VideoCapture(video_path)
@@ -119,9 +122,13 @@ with mp_pose.Pose(
                     acc_y = (vel_y - previous_velocity[1]) / dt if frame_id > 0 else 0
                     previous_velocity = [vel_x, vel_y]
 
+                    # Suavizado simple de la aceleración (promedio móvil básico)
+                    smoothed_acc_x = (smoothed_acc_x * (ventana - 1) + acc_x) / ventana if frame_id > 0 else acc_x
+                    smoothed_acc_y = (smoothed_acc_y * (ventana - 1) + acc_y) / ventana if frame_id > 0 else acc_y
+
                 previous_position = (xm, ym)
 
-                print(f"Frame {frame_id}: Posición (xm, ym) = ({xm}, {ym}), Velocidad (x, y) = ({vel_x:.6f}, {vel_y:.6f}), Aceleración (x, y) = ({acc_x:.6f}, {acc_y:.6f})")
+                print(f"Frame {frame_id}: Posición (xm, ym) = ({xm}, {ym}), Velocidad (x, y) = ({vel_x:.6f}, {vel_y:.6f}), Aceleración suavizada (x, y) = ({smoothed_acc_x:.6f}, {smoothed_acc_y:.6f})")
 
                 # Normalizar y dibujar vector de velocidad (VERDE)
                 vel_length = math.sqrt(vel_x**2 + vel_y**2)
@@ -146,11 +153,11 @@ with mp_pose.Pose(
                     )
                     print(f"Dibujando vector de velocidad en ({xm}, {ym}) -> ({end_point_velocity[0]}, {end_point_velocity[1]})")
 
-                # Normalizar y dibujar vector de aceleración (ROJO)
-                acc_length = math.sqrt(acc_x**2 + acc_y**2)
+                # Normalizar y dibujar vector de aceleración suavizada (ROJO)
+                acc_length = math.sqrt(smoothed_acc_x**2 + smoothed_acc_y**2)
                 if acc_length > MIN_ACC_THRESHOLD:
-                    norm_acc_x = acc_x / acc_length
-                    norm_acc_y = acc_y / acc_length
+                    norm_acc_x = smoothed_acc_x / acc_length
+                    norm_acc_y = smoothed_acc_y / acc_length
                     end_point_acceleration = (
                         int(xm + norm_acc_x * (VECTOR_SCALE * 0.8)),
                         int(ym + norm_acc_y * (VECTOR_SCALE * 0.8))
@@ -167,7 +174,7 @@ with mp_pose.Pose(
                         3,
                         tipLength=0.3
                     )
-                    print(f"Dibujando vector de aceleración en ({xm}, {ym}) -> ({end_point_acceleration[0]}, {end_point_acceleration[1]})")
+                    print(f"Dibujando vector de aceleración suavizada en ({xm}, {ym}) -> ({end_point_acceleration[0]}, {end_point_acceleration[1]})")
 
                 # Mostrar texto siempre
                 cv2.putText(
@@ -188,6 +195,46 @@ with mp_pose.Pose(
                     (255, 255, 255),
                     3
                 )
+                 #Diagrama de cuerpo libre: 
+
+                
+                # Primero se calcula el centro de masa y longitudes de las flechas
+                cm_x = int((xc + xm) / 2) #Aproximacion del centro de masa del antebrazo al punto medio entre la articulación del codo y la muñeca
+                cm_y = int((yc + ym) / 2)
+                mg_px_len = VECTOR_SCALE // 2 #Longitudes en píxeles de cada flecha (fuerza peso, muscular y reacción)
+                fm_px_len = VECTOR_SCALE // 2
+                R_px_len  = VECTOR_SCALE // 2
+
+                # Realiza la flecha Peso mg → flecha hacia abajo desde el centro de masa
+                end_mg = (cm_x, cm_y + mg_px_len) 
+                cv2.arrowedLine(frame, (cm_x,cm_y), end_mg, (0,255,255), 3, tipLength=0.3)
+                cv2.putText(frame, 'mg',
+                            (cm_x-10, cm_y+mg_px_len+20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,255), 2)
+
+                # Realiza la flecha de la Fuerza muscular Fm desde el codo hacia el hombro
+                vec_mx, vec_my = xh-xc, yh-yc
+                mag_m = math.hypot(vec_mx, vec_my)
+                if mag_m > 0:
+                    ux, uy = vec_mx/mag_m, vec_my/mag_m
+                    end_fm = (xc + int(ux*fm_px_len), yc + int(uy*fm_px_len))
+                    cv2.arrowedLine(frame, (xc,yc), end_fm, (255,255,0), 3, tipLength=0.3)
+                    cv2.putText(frame, 'Fm',
+                                (end_fm[0]+5, end_fm[1]-5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 2)
+
+                    # Realiza la flecha de Reacción articular R = –(Fm + mg)
+                    mg_vec = np.array([0, mg_px_len])
+                    fm_vec = np.array([ux*fm_px_len, uy*fm_px_len])
+                    R_vec  = -(fm_vec + mg_vec)
+                    mag_R  = np.linalg.norm(R_vec)
+                    if mag_R > 0:
+                        Rx, Ry = R_vec/mag_R
+                        end_R = (xc + int(Rx*R_px_len), yc + int(Ry*R_px_len))
+                        cv2.arrowedLine(frame, (xc,yc), end_R, (200,200,200), 3, tipLength=0.3)
+                        cv2.putText(frame, 'R',
+                                    (end_R[0]+5, end_R[1]+5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (200,200,200), 2)
 
                 # Almacenar datos visibles
                 datos_visibles.append({
@@ -197,6 +244,7 @@ with mp_pose.Pose(
                     'muneca_x': xm, 'muneca_y': ym,
                     'cadera_x': xca, 'cadera_y': yca
                 })
+
 
             # Almacenar todos los datos
             fila_completa = {'frame': frame_id}
@@ -268,22 +316,40 @@ if factor is not None:
         articulaciones = ['hombro', 'codo', 'muneca', 'cadera']
         for articulacion in articulaciones:
             # Posición
+            df_derivadas[f'{articulacion}_mag'] = np.sqrt(
+                df_derivadas[f'{articulacion}_x']**2 + df_derivadas[f'{articulacion}_y']**2
+            )
+            df_derivadas[f'{articulacion}_ang'] = np.arctan2(
+                df_derivadas[f'{articulacion}_y'], df_derivadas[f'{articulacion}_x']
+            )
             df_derivadas_suav[f'{articulacion}_mag'] = np.sqrt(
-                df_derivadas_suav[f'{articulacion}_x']*2 + df_derivadas_suav[f'{articulacion}_y']*2
+                df_derivadas_suav[f'{articulacion}_x']**2 + df_derivadas_suav[f'{articulacion}_y']**2
             )
             df_derivadas_suav[f'{articulacion}_ang'] = np.arctan2(
                 df_derivadas_suav[f'{articulacion}_y'], df_derivadas_suav[f'{articulacion}_x']
             )
             # Velocidad
+            df_derivadas[f'{articulacion}_vel_mag'] = np.sqrt(
+                df_derivadas[f'{articulacion}_x_vel']**2 + df_derivadas[f'{articulacion}_y_vel']**2
+            )
+            df_derivadas[f'{articulacion}_vel_ang'] = np.arctan2(
+                df_derivadas[f'{articulacion}_y_vel'], df_derivadas[f'{articulacion}_x_vel']
+            )
             df_derivadas_suav[f'{articulacion}_vel_mag'] = np.sqrt(
-                df_derivadas_suav[f'{articulacion}_x_vel']*2 + df_derivadas_suav[f'{articulacion}_y_vel']*2
+                df_derivadas_suav[f'{articulacion}_x_vel']**2 + df_derivadas_suav[f'{articulacion}_y_vel']**2
             )
             df_derivadas_suav[f'{articulacion}_vel_ang'] = np.arctan2(
                 df_derivadas_suav[f'{articulacion}_y_vel'], df_derivadas_suav[f'{articulacion}_x_vel']
             )
             # Aceleración
+            df_derivadas[f'{articulacion}_acc_mag'] = np.sqrt(
+                df_derivadas[f'{articulacion}_x_acc']**2 + df_derivadas[f'{articulacion}_y_acc']**2
+            )
+            df_derivadas[f'{articulacion}_acc_ang'] = np.arctan2(
+                df_derivadas[f'{articulacion}_y_acc'], df_derivadas[f'{articulacion}_x_acc']
+            )
             df_derivadas_suav[f'{articulacion}_acc_mag'] = np.sqrt(
-                df_derivadas_suav[f'{articulacion}_x_acc']*2 + df_derivadas_suav[f'{articulacion}_y_acc']*2
+                df_derivadas_suav[f'{articulacion}_x_acc']**2 + df_derivadas_suav[f'{articulacion}_y_acc']**2
             )
             df_derivadas_suav[f'{articulacion}_acc_ang'] = np.arctan2(
                 df_derivadas_suav[f'{articulacion}_y_acc'], df_derivadas_suav[f'{articulacion}_x_acc']
@@ -318,10 +384,28 @@ if factor is not None:
         print(f"- datos_articulaciones.pkl (DataFrame completo)")
         print(f"- datos_articulaciones.csv (Versión CSV)")
 
-        # Generación de gráficos para datos suavizados y sin suavizar
+        # Generación de gráficos (suavizados y no suavizados)
         puntos_seguir = ['hombro', 'codo', 'muneca', 'cadera']
         for punto in puntos_seguir:
-            # Gráficos para eje X
+            # Gráficos para eje X (no suavizados)
+            fig_x, axs_x = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+            fig_x.suptitle(f'Movimiento de {punto.capitalize()} en eje X (No Suavizado)')
+            axs_x[0].plot(df_derivadas['frame'], df_derivadas[f'{punto}_x'], label='Posición', color='blue')
+            axs_x[0].set_ylabel('Posición (m)')
+            axs_x[0].legend()
+            axs_x[1].plot(df_derivadas['frame'], df_derivadas[f'{punto}_x_vel'], label='Velocidad', color='green')
+            axs_x[1].set_ylabel('Velocidad (m/s)')
+            axs_x[1].legend()
+            axs_x[2].plot(df_derivadas['frame'], df_derivadas[f'{punto}_x_acc'], label='Aceleración', color='red')
+            axs_x[2].set_xlabel('Frame')
+            axs_x[2].set_ylabel('Aceleración (m/s²)')
+            axs_x[2].legend()
+            plt.tight_layout()
+            ruta_grafico_x = os.path.join(carpeta_datos, f'movimiento_{punto}_X_no_suavizado.png')
+            plt.savefig(ruta_grafico_x)
+            plt.close()
+
+            # Gráficos para eje X (suavizados)
             fig_x_suav, axs_x_suav = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
             fig_x_suav.suptitle(f'Movimiento de {punto.capitalize()} en eje X (Suavizado)')
             axs_x_suav[0].plot(df_unificado['frame'], df_unificado[f'{punto}_x'], label='Posición', color='blue')
@@ -339,24 +423,25 @@ if factor is not None:
             plt.savefig(ruta_grafico_x_suav)
             plt.close()
 
-            fig_x_no_suav, axs_x_no_suav = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-            fig_x_no_suav.suptitle(f'Movimiento de {punto.capitalize()} en eje X (Sin Suavizar)')
-            axs_x_no_suav[0].plot(df_derivadas['frame'], df_derivadas[f'{punto}_x'], label='Posición', color='blue')
-            axs_x_no_suav[0].set_ylabel('Posición (m)')
-            axs_x_no_suav[0].legend()
-            axs_x_no_suav[1].plot(df_derivadas['frame'], df_derivadas[f'{punto}_x_vel'], label='Velocidad', color='green')
-            axs_x_no_suav[1].set_ylabel('Velocidad (m/s)')
-            axs_x_no_suav[1].legend()
-            axs_x_no_suav[2].plot(df_derivadas['frame'], df_derivadas[f'{punto}_x_acc'], label='Aceleración', color='red')
-            axs_x_no_suav[2].set_xlabel('Frame')
-            axs_x_no_suav[2].set_ylabel('Aceleración (m/s²)')
-            axs_x_no_suav[2].legend()
+            # Gráficos para eje Y (no suavizados)
+            fig_y, axs_y = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+            fig_y.suptitle(f'Movimiento de {punto.capitalize()} en eje Y (No Suavizado)')
+            axs_y[0].plot(df_derivadas['frame'], df_derivadas[f'{punto}_y'], label='Posición', color='purple')
+            axs_y[0].set_ylabel('Posición (m)')
+            axs_y[0].legend()
+            axs_y[1].plot(df_derivadas['frame'], df_derivadas[f'{punto}_y_vel'], label='Velocidad', color='orange')
+            axs_y[1].set_ylabel('Velocidad (m/s)')
+            axs_y[1].legend()
+            axs_y[2].plot(df_derivadas['frame'], df_derivadas[f'{punto}_y_acc'], label='Aceleración', color='brown')
+            axs_y[2].set_xlabel('Frame')
+            axs_y[2].set_ylabel('Aceleración (m/s²)')
+            axs_y[2].legend()
             plt.tight_layout()
-            ruta_grafico_x_no_suav = os.path.join(carpeta_datos, f'movimiento_{punto}_X_sin_suavizar.png')
-            plt.savefig(ruta_grafico_x_no_suav)
+            ruta_grafico_y = os.path.join(carpeta_datos, f'movimiento_{punto}_Y_no_suavizado.png')
+            plt.savefig(ruta_grafico_y)
             plt.close()
 
-            # Gráficos para eje Y
+            # Gráficos para eje Y (suavizados)
             fig_y_suav, axs_y_suav = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
             fig_y_suav.suptitle(f'Movimiento de {punto.capitalize()} en eje Y (Suavizado)')
             axs_y_suav[0].plot(df_unificado['frame'], df_unificado[f'{punto}_y'], label='Posición', color='purple')
@@ -374,35 +459,50 @@ if factor is not None:
             plt.savefig(ruta_grafico_y_suav)
             plt.close()
 
-            fig_y_no_suav, axs_y_no_suav = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-            fig_y_no_suav.suptitle(f'Movimiento de {punto.capitalize()} en eje Y (Sin Suavizar)')
-            axs_y_no_suav[0].plot(df_derivadas['frame'], df_derivadas[f'{punto}_y'], label='Posición', color='purple')
-            axs_y_no_suav[0].set_ylabel('Posición (m)')
-            axs_y_no_suav[0].legend()
-            axs_y_no_suav[1].plot(df_derivadas['frame'], df_derivadas[f'{punto}_y_vel'], label='Velocidad', color='orange')
-            axs_y_no_suav[1].set_ylabel('Velocidad (m/s)')
-            axs_y_no_suav[1].legend()
-            axs_y_no_suav[2].plot(df_derivadas['frame'], df_derivadas[f'{punto}_y_acc'], label='Aceleración', color='brown')
-            axs_y_no_suav[2].set_xlabel('Frame')
-            axs_y_no_suav[2].set_ylabel('Aceleración (m/s²)')
-            axs_y_no_suav[2].legend()
+            # Gráficos cartesianos para polares (no suavizados)
+            fig_vel_ang, ax_vel_ang = plt.subplots(figsize=(10, 6))
+            fig_vel_ang.suptitle(f'Velocidad Angular de {punto.capitalize()} (No Suavizado)')
+            ax_vel_ang.plot(df_derivadas['frame'], df_derivadas[f'{punto}_vel_ang'], label='Velocidad Angular', color='green')
+            ax_vel_ang.set_xlabel('Frame')
+            ax_vel_ang.set_ylabel('Ángulo (radianes)')
+            ax_vel_ang.legend()
             plt.tight_layout()
-            ruta_grafico_y_no_suav = os.path.join(carpeta_datos, f'movimiento_{punto}_Y_sin_suavizar.png')
-            plt.savefig(ruta_grafico_y_no_suav)
+            ruta_grafico_vel_ang = os.path.join(carpeta_datos, f'movimiento_{punto}_vel_ang_no_suavizado.png')
+            plt.savefig(ruta_grafico_vel_ang)
             plt.close()
 
-            # Gráficos en coordenadas polares (solo suavizados como ejemplo)
-            fig_polar_suav, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), subplot_kw={'projection': 'polar'})
-            fig_polar_suav.suptitle(f'Movimiento de {punto.capitalize()} en Polares (Suavizado)')
-            ax1.plot(df_unificado[f'{punto}_ang'], df_unificado[f'{punto}_mag'], label='Posición', color='blue')
-            ax1.set_title('Magnitud de Posición')
-            ax1.legend()
-            ax2.plot(df_unificado[f'{punto}_vel_ang'], df_unificado[f'{punto}_vel_mag'], label='Velocidad', color='green')
-            ax2.set_title('Magnitud de Velocidad')
-            ax2.legend()
+            fig_acc_ang, ax_acc_ang = plt.subplots(figsize=(10, 6))
+            fig_acc_ang.suptitle(f'Aceleración Angular de {punto.capitalize()} (No Suavizado)')
+            ax_acc_ang.plot(df_derivadas['frame'], df_derivadas[f'{punto}_acc_ang'], label='Aceleración Angular', color='red')
+            ax_acc_ang.set_xlabel('Frame')
+            ax_acc_ang.set_ylabel('Ángulo (radianes)')
+            ax_acc_ang.legend()
             plt.tight_layout()
-            ruta_grafico_polar_suav = os.path.join(carpeta_datos, f'movimiento_{punto}_polar_suavizado.png')
-            plt.savefig(ruta_grafico_polar_suav)
+            ruta_grafico_acc_ang = os.path.join(carpeta_datos, f'movimiento_{punto}_acc_ang_no_suavizado.png')
+            plt.savefig(ruta_grafico_acc_ang)
+            plt.close()
+
+            # Gráficos cartesianos para polares (suavizados)
+            fig_vel_ang_suav, ax_vel_ang_suav = plt.subplots(figsize=(10, 6))
+            fig_vel_ang_suav.suptitle(f'Velocidad Angular de {punto.capitalize()} (Suavizado)')
+            ax_vel_ang_suav.plot(df_unificado['frame'], df_unificado[f'{punto}_vel_ang'], label='Velocidad Angular', color='green')
+            ax_vel_ang_suav.set_xlabel('Frame')
+            ax_vel_ang_suav.set_ylabel('Ángulo (radianes)')
+            ax_vel_ang_suav.legend()
+            plt.tight_layout()
+            ruta_grafico_vel_ang_suav = os.path.join(carpeta_datos, f'movimiento_{punto}_vel_ang_suavizado.png')
+            plt.savefig(ruta_grafico_vel_ang_suav)
+            plt.close()
+
+            fig_acc_ang_suav, ax_acc_ang_suav = plt.subplots(figsize=(10, 6))
+            fig_acc_ang_suav.suptitle(f'Aceleración Angular de {punto.capitalize()} (Suavizado)')
+            ax_acc_ang_suav.plot(df_unificado['frame'], df_unificado[f'{punto}_acc_ang'], label='Aceleración Angular', color='red')
+            ax_acc_ang_suav.set_xlabel('Frame')
+            ax_acc_ang_suav.set_ylabel('Ángulo (radianes)')
+            ax_acc_ang_suav.legend()
+            plt.tight_layout()
+            ruta_grafico_acc_ang_suav = os.path.join(carpeta_datos, f'movimiento_{punto}_acc_ang_suavizado.png')
+            plt.savefig(ruta_grafico_acc_ang_suav)
             plt.close()
 
         print("\nProceso completado exitosamente!")
