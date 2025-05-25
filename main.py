@@ -11,7 +11,7 @@ import pickle
 mp_pose = mp.solutions.pose
 
 # Configuración inicial
-video_path = 'codigo/videoATrackear.mp4'
+video_path = 'videoGym.mp4'
 if not os.path.exists(video_path):
     print(f"Error: Archivo de video no encontrado en {video_path}")
     exit()
@@ -27,10 +27,10 @@ altura_real = 1.75
 longitud_real_antebrazo = 0.227
 
 # Variables para visualización
-VECTOR_SCALE = 50
+VECTOR_SCALE = 150 #Agrande un pooco los vectores
 MIN_VEL_THRESHOLD = 0.001  # Umbral mínimo para dibujar el vector de velocidad
 MIN_ACC_THRESHOLD = 0.005  # Umbral mínimo para dibujar el vector de aceleración
-ventana = 3  # Definimos ventana aquí para usarla en el suavizado en tiempo real
+ventana = 7  # Definimos ventana aquí para usarla en el suavizado en tiempo real
 
 # Estructuras de datos
 datos_completos = []
@@ -195,6 +195,45 @@ with mp_pose.Pose(
                     (255, 255, 255),
                     3
                 )
+                 #Diagrama de cuerpo libre: 
+                
+                # Primero se calcula el centro de masa y longitudes de las flechas
+                cm_x = int((xc + xm) / 2) #Aproximacion del centro de masa del antebrazo al punto medio entre la articulación del codo y la muñeca
+                cm_y = int((yc + ym) / 2)
+                mg_px_len = VECTOR_SCALE // 2 #Longitudes en píxeles de cada flecha (fuerza peso, muscular y reacción)
+                fm_px_len = VECTOR_SCALE // 2
+                R_px_len  = VECTOR_SCALE // 2
+
+                # Realiza la flecha Peso mg → flecha hacia abajo desde el centro de masa
+                end_mg = (cm_x, cm_y + mg_px_len) 
+                cv2.arrowedLine(frame, (cm_x,cm_y), end_mg, (0,255,255), 3, tipLength=0.3)
+                cv2.putText(frame, 'mg',
+                            (cm_x-10, cm_y+mg_px_len+20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,255), 2)
+
+                # Realiza la flecha de la Fuerza muscular Fm desde el codo hacia el hombro
+                vec_mx, vec_my = xh-xc, yh-yc
+                mag_m = math.hypot(vec_mx, vec_my)
+                if mag_m > 0:
+                    ux, uy = vec_mx/mag_m, vec_my/mag_m
+                    end_fm = (xc + int(ux*fm_px_len), yc + int(uy*fm_px_len))
+                    cv2.arrowedLine(frame, (xc,yc), end_fm, (255,255,0), 3, tipLength=0.3)
+                    cv2.putText(frame, 'Fm',
+                                (end_fm[0]+5, end_fm[1]-5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 2)
+
+                    # Realiza la flecha de Reacción articular R = –(Fm + mg)
+                    mg_vec = np.array([0, mg_px_len])
+                    fm_vec = np.array([ux*fm_px_len, uy*fm_px_len])
+                    R_vec  = -(fm_vec + mg_vec)
+                    mag_R  = np.linalg.norm(R_vec)
+                    if mag_R > 0:
+                        Rx, Ry = R_vec/mag_R
+                        end_R = (xc + int(Rx*R_px_len), yc + int(Ry*R_px_len))
+                        cv2.arrowedLine(frame, (xc,yc), end_R, (200,200,200), 3, tipLength=0.3)
+                        cv2.putText(frame, 'R',
+                                    (end_R[0]+5, end_R[1]+5),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (200,200,200), 2)
 
                 # Almacenar datos visibles
                 datos_visibles.append({
