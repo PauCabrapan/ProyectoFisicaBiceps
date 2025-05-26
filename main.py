@@ -40,6 +40,8 @@ previous_velocity = [0, 0]
 factor = None
 smoothed_acc_x = 0  # Aceleración suavizada en x
 smoothed_acc_y = 0  # Aceleración suavizada en y
+position_buffer_x = []  # Buffer para posiciones x
+position_buffer_y = []  # Buffer para posiciones y
 
 # Procesamiento del video en una sola pasada
 cap = cv2.VideoCapture(video_path)
@@ -111,11 +113,24 @@ with mp_pose.Pose(
                         print(f"Error al calcular el factor de conversión: {e}. Usando factor por defecto de 0.001")
                         factor = 0.001  # Valor por defecto si falla
 
-                # Calcular velocidad y aceleración en tiempo real
+                # Suavizado de posiciones usando un buffer
+                if factor is not None:
+                    position_buffer_x.append(xm * factor)
+                    position_buffer_y.append(ym * factor)
+                    if len(position_buffer_x) > ventana:
+                        position_buffer_x.pop(0)
+                        position_buffer_y.pop(0)
+                    smoothed_x = np.mean(position_buffer_x) if position_buffer_x else xm * factor
+                    smoothed_y = np.mean(position_buffer_y) if position_buffer_y else ym * factor
+                else:
+                    smoothed_x = xm * 0.001  # Factor por defecto si no se calculó
+                    smoothed_y = ym * 0.001
+
+                # Calcular velocidad y aceleración a partir de posiciones suavizadas
                 vel_x = vel_y = acc_x = acc_y = 0
                 if previous_position is not None and factor is not None:
-                    dx = (xm - previous_position[0]) * factor
-                    dy = (ym - previous_position[1]) * factor
+                    dx = (smoothed_x - previous_position[0])
+                    dy = (smoothed_y - previous_position[1])
                     vel_x = dx / dt  # Velocidad en m/s
                     vel_y = dy / dt
                     acc_x = (vel_x - previous_velocity[0]) / dt if frame_id > 0 else 0
@@ -126,9 +141,9 @@ with mp_pose.Pose(
                     smoothed_acc_x = (smoothed_acc_x * (ventana - 1) + acc_x) / ventana if frame_id > 0 else acc_x
                     smoothed_acc_y = (smoothed_acc_y * (ventana - 1) + acc_y) / ventana if frame_id > 0 else acc_y
 
-                previous_position = (xm, ym)
+                previous_position = (smoothed_x, smoothed_y)
 
-                print(f"Frame {frame_id}: Posición (xm, ym) = ({xm}, {ym}), Velocidad (x, y) = ({vel_x:.6f}, {vel_y:.6f}), Aceleración suavizada (x, y) = ({smoothed_acc_x:.6f}, {smoothed_acc_y:.6f})")
+                print(f"Frame {frame_id}: Posición suavizada (x, y) = ({smoothed_x:.6f}, {smoothed_y:.6f}), Velocidad (x, y) = ({vel_x:.6f}, {vel_y:.6f}), Aceleración suavizada (x, y) = ({smoothed_acc_x:.6f}, {smoothed_acc_y:.6f})")
 
                 # Normalizar y dibujar vector de velocidad (VERDE)
                 vel_length = math.sqrt(vel_x**2 + vel_y**2)
