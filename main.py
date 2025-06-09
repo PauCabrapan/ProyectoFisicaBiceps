@@ -227,29 +227,25 @@ with mp_pose.Pose(
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,255), 2)
 
                 # Realiza la flecha de la Fuerza muscular Fm desde el codo hacia el hombro
+                insertion_dist_m = 0.04              # 4 cm en metros
+                insertion_px = insertion_dist_m / factor  # distancia en píxeles
                 vec_mx, vec_my = xh-xc, yh-yc
                 mag_m = math.hypot(vec_mx, vec_my)
                 if mag_m > 0:
                     ux, uy = vec_mx/mag_m, vec_my/mag_m
-                    end_fm = (xc + int(ux*fm_px_len), yc + int(uy*fm_px_len))
-                    cv2.arrowedLine(frame, (xc,yc), end_fm, (255,255,0), 3, tipLength=0.3)
+                    origin_fm = (
+                        int(xc + ux * insertion_px),
+                        int(yc + uy * insertion_px)
+                    )
+                    end_fm = (
+                        int(origin_fm[0] + ux * fm_px_len),
+                        int(origin_fm[1] + uy * fm_px_len)
+                    )
+                    cv2.arrowedLine(frame, origin_fm, end_fm, (255,255,0), 3, tipLength=0.3)
                     cv2.putText(frame, 'Fm',
-                                (end_fm[0]+5, end_fm[1]-5),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 2)
-
-                    # Realiza la flecha de Reacción articular R = –(Fm + mg)
-                    mg_vec = np.array([0, mg_px_len])
-                    fm_vec = np.array([ux*fm_px_len, uy*fm_px_len])
-                    R_vec  = -(fm_vec + mg_vec)
-                    mag_R  = np.linalg.norm(R_vec)
-                    if mag_R > 0:
-                        Rx, Ry = R_vec/mag_R
-                        end_R = (xc + int(Rx*R_px_len), yc + int(Ry*R_px_len))
-                        cv2.arrowedLine(frame, (xc,yc), end_R, (200,200,200), 3, tipLength=0.3)
-                        cv2.putText(frame, 'R',
-                                    (end_R[0]+5, end_R[1]+5),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (200,200,200), 2)
-
+                        (end_fm[0] + 5, end_fm[1] - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 2)
+                    
                 # Almacenar datos visibles
                 datos_visibles.append({
                     'frame': frame_id,
