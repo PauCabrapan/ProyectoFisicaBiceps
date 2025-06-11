@@ -229,22 +229,39 @@ with mp_pose.Pose(
                 # Realiza la flecha de la Fuerza muscular Fm desde el codo hacia el hombro
                 insertion_dist_m = 0.04              # 4 cm en metros
                 insertion_px = insertion_dist_m / factor  # distancia en píxeles
-                vec_mx, vec_my = xh-xc, yh-yc
+                vec_mx, vec_my = xh - xc, yh - yc
                 mag_m = math.hypot(vec_mx, vec_my)
-                if mag_m > 0:
-                    ux, uy = vec_mx/mag_m, vec_my/mag_m
-                    origin_fm = (
-                        int(xc + ux * insertion_px),
-                        int(yc + uy * insertion_px)
-                    )
-                    end_fm = (
-                        int(origin_fm[0] + ux * fm_px_len),
-                        int(origin_fm[1] + uy * fm_px_len)
-                    )
-                    cv2.arrowedLine(frame, origin_fm, end_fm, (255,255,0), 3, tipLength=0.3)
-                    cv2.putText(frame, 'Fm',
-                        (end_fm[0] + 5, end_fm[1] - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 2)
+                ux, uy = vec_mx/mag_m, vec_my/mag_m if mag_m>0 else (0,0)
+                vec_cw_x, vec_cw_y = xm - xc, ym - yc
+                mag_cw = math.hypot(vec_cw_x, vec_cw_y)
+                ux_ins, uy_ins = vec_cw_x/mag_cw, vec_cw_y/mag_cw if mag_cw>0 else (0,0)
+                origin_fm = (
+                    int(xc + ux_ins * insertion_px),
+                    int(yc + uy_ins * insertion_px)
+                )
+                end_fm = (
+                    int(origin_fm[0] + ux * fm_px_len),
+                    int(origin_fm[1] + uy * fm_px_len)
+                )
+                cv2.arrowedLine(frame, origin_fm, end_fm,
+                                (255,255,0), 3, tipLength=0.3)
+                cv2.putText(frame, 'Fm',
+                            (end_fm[0] + 5, end_fm[1] - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 2)
+                
+                # Realiza flecha del peso de la mancuerna 
+                
+                masa_manc = 2.5       
+                g = 9.81              
+                fuerza_manc = masa_manc * g  
+                peso_db_px = VECTOR_SCALE // 2
+                origin_db = (xm, ym)
+                end_db = (xm, ym + peso_db_px)
+                cv2.arrowedLine(frame, origin_db, end_db,
+                                (255, 0, 0), 3, tipLength=0.3)
+                cv2.putText(frame, 'Pm',
+                            (end_db[0] - 10, end_db[1] + 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 2)
                     
                 # Almacenar datos visibles
                 datos_visibles.append({
