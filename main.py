@@ -61,6 +61,10 @@ with mp_pose.Pose(
     landmarks_frame = None
     first_visible_frame = True
 
+    work_mus = 0.0
+    previous_theta = None
+
+
     while cap.isOpened():
         success, frame = cap.read()
         if not success:
@@ -249,6 +253,93 @@ with mp_pose.Pose(
                             (end_fm[0] + 5, end_fm[1] - 5),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 2)
                 
+                # Cálculo de la magnitud de Fm en cada frame 
+
+                peso_usuario = 74.0           
+                m_ant        = 0.02 * peso_usuario  # masa antebrazo
+                m_manc       = 2.5                 # kg, tu mancuerna
+                g            = 9.81                # m/s²
+
+                # Distancias en metros (factor = m/px)
+                r_d = math.hypot(xm-xc, ym-yc) * factor   # codo→muñeca
+                r_g = r_d / 2.0                           # codo→CM antebrazo
+                r_m = 0.04                                # 4 cm = brazo palanca bíceps
+
+                # Momento gravitatorio
+                tau_ant  = m_ant  * g * r_g
+                tau_manc = m_manc * g * r_d
+
+                # Fuerza muscular estática
+                Fm_mag = (tau_ant + tau_manc) / r_m
+                # --- Ángulo actual del antebrazo (codo→muñeca) ---
+
+                # Convertimos a metros para ser coherentes, pero el factor se cancela en la dirección.
+                dx = (xm - xc) * factor
+                dy = (ym - yc) * factor
+                theta = math.atan2(dy, dx)   # radianes
+
+                # Calculo del trabajo
+                if previous_theta is not None:
+                    dtheta = theta - previous_theta
+                    # Torque muscular en N·m
+                    torque_muscular = Fm_mag * r_m  
+                    # dW = τ · dθ
+                    work_mus += torque_muscular * abs(dtheta)   
+
+
+                    eta = 0.25                           # eficiencia muscular
+                    E_metab_J   = work_mus / eta        # J metabolicos
+                    kcal_burned = E_metab_J / 4184.0    # kcal
+
+                    # Dibujar en pantalla
+                    cv2.putText(frame,
+                        f"Cal: {kcal_burned:.4f} kcal",
+                        (1400, text_h*2 + 150),            # justo debajo de W
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        2.5,
+                        (255,255,255),
+                        4,
+                        cv2.LINE_AA)
+                    
+                previous_theta = theta
+
+                # Imprime el calculo del trabajo por pantalla
+                h_frame, w_frame, _ = frame.shape
+                cv2.putText(frame,
+                            f"W = {work_mus:.1f} J",
+                            (10, h_frame - 100),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            3.0,
+                            (255,255,255),
+                            4,
+                            cv2.LINE_AA)
+                
+
+
+                h_frame, w_frame, _ = frame.shape
+
+
+                text = f"Fm = {Fm_mag:.1f} N"
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                scale = 3.0
+                thickness = 5
+
+                (text_w, text_h), _ = cv2.getTextSize(text, font, scale, thickness)
+
+                pos_x = 10
+                pos_y = h_frame - 10
+
+                cv2.putText(
+                    frame,
+                    text,
+                    (pos_x, pos_y),
+                    font,
+                    scale,
+                    (255,255,255),
+                    thickness,
+                    cv2.LINE_AA
+                )
+                
                 # Realiza flecha del peso de la mancuerna 
                 
                 masa_manc = 2.5       
@@ -262,6 +353,9 @@ with mp_pose.Pose(
                 cv2.putText(frame, 'Pm',
                             (end_db[0] - 10, end_db[1] + 20),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 2)
+                
+
+                
                     
                 # Almacenar datos visibles
                 datos_visibles.append({
@@ -292,6 +386,8 @@ with mp_pose.Pose(
             break
 
         frame_id += 1
+
+print(f"Trabajo total hecho por el bíceps: {work_mus:.2f} J")
 
 cap.release()
 cv2.destroyAllWindows()
@@ -533,4 +629,5 @@ if factor is not None:
 
         print("\nProceso completado exitosamente!")
 else:
+    print("No se pudo calcular un factor de conversión válido.")
     print("No se pudo calcular un factor de conversión válido.")
