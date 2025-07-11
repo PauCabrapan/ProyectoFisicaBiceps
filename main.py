@@ -130,6 +130,14 @@ with mp_pose.Pose(
                     smoothed_x = xm * 0.001  # Factor por defecto si no se calculó
                     smoothed_y = ym * 0.001
 
+                
+                # Almacenar datos para gráficos
+                if 'energy_data' not in locals():
+                    energy_data = {'frame': [], 'Ep': [], 'Ek': []}
+                energy_data['frame'].append(frame_id)
+                energy_data['Ep'].append(Ep)
+                energy_data['Ek'].append(Ek)
+
                 # Calcular velocidad y aceleración a partir de posiciones suavizadas
                 vel_x = vel_y = acc_x = acc_y = 0
                 if previous_position is not None and factor is not None:
@@ -273,10 +281,55 @@ with mp_pose.Pose(
                 Fm_mag = (tau_ant + tau_manc) / r_m
                 # --- Ángulo actual del antebrazo (codo→muñeca) ---
 
+                # Calcular componentes de Fm AGREGUE ULTIMO
+                vec_mx, vec_my = xh - xc, yh - yc
+                mag_m = math.hypot(vec_mx, vec_my)
+                if mag_m > 0:
+                    Fm_x = Fm_mag * (vec_mx / mag_m)  # Componente x de Fm
+                    Fm_y = Fm_mag * (vec_my / mag_m)  # Componente y de Fm
+                else:
+                    Fm_x = Fm_y = 0
+
+                # Aceleración del centro de masa (usamos la de la muñeca como aproximación)
+                a_cm_x = smoothed_acc_x
+                a_cm_y = smoothed_acc_y
+
+                # Fuerza de reacción R
+                R_x = m_ant * a_cm_x - Fm_x  # Equilibrio en x
+                R_y = m_ant * a_cm_y + (m_ant * g) + (m_manc * g) - Fm_y  # Equilibrio en y
+
+                # Dibujar fuerza de reacción R
+                R_px_len = VECTOR_SCALE // 2
+                # Dirección opuesta a Fm como aproximación (ajustar según necesidad)
+                R_dir_x = -Fm_x / Fm_mag if Fm_mag > 0 else 0
+                R_dir_y = -Fm_y / Fm_mag if Fm_mag > 0 else 0
+                end_R = (int(xc + R_dir_x * R_px_len), int(yc + R_dir_y * R_px_len))
+                cv2.arrowedLine(frame, (xc, yc), end_R, (0, 0, 255), 3, tipLength=0.3)
+                cv2.putText(frame, 'R', (end_R[0] + 5, end_R[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+                # Mostrar componentes de R
+                cv2.putText(frame, f"R_x = {R_x:.1f} N", (xc + 20, yc - 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                cv2.putText(frame, f"R_y = {R_y:.1f} N", (xc + 20, yc + 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
                 # Convertimos a metros para ser coherentes, pero el factor se cancela en la dirección.
                 dx = (xm - xc) * factor
                 dy = (ym - yc) * factor
                 theta = math.atan2(dy, dx)   # radianes
+
+                # Calcular energías
+                m_total = m_ant + m_manc  # Masa total (antebrazo + mancuerna)
+                h_ref = yc * factor if frame_id == 0 else h_ref  # Altura de referencia (inicial)
+                h = (smoothed_y - h_ref) if frame_id > 0 else 0  # Altura relativa en metros
+                Ep = m_total * g * h  # Energía potencial en julios
+                I = (1/3) * m_ant * (r_d ** 2) + m_manc * (r_d ** 2)  # Momento de inercia total
+                Ek = 0.5 * I * ((theta - previous_theta) / dt) ** 2 if previous_theta is not None and frame_id > 1 else 0  # Energía cinética
+
+                # Almacenar datos para gráficos
+                if 'energy_data' not in locals():
+                    energy_data = {'frame': [], 'Ep': [], 'Ek': []}
+                energy_data['frame'].append(frame_id)
+                energy_data['Ep'].append(Ep)
+                energy_data['Ek'].append(Ek)
 
                 # Calculo del trabajo
                 if previous_theta is not None:
@@ -603,6 +656,20 @@ if factor is not None:
             ruta_grafico_acc_ang = os.path.join(carpeta_datos, f'movimiento_{punto}_acc_ang_no_suavizado.png')
             plt.savefig(ruta_grafico_acc_ang)
             plt.close()
+
+            # Gráficos de energía (suavizados)
+            for punto in ['muneca']:  # Solo muneca para simplificar, podés agregar otros
+                fig_energy, ax_energy = plt.subplots(figsize=(10, 6))
+                fig_energy.suptitle(f'Energía de {punto.capitalize()} (Suavizado)')
+                ax_energy.plot(df_unificado['frame'], [energy_data['Ep'][i] for i in range(len(df_unificado))], label='Energía Potencial (J)', color='blue')
+                ax_energy.plot(df_unificado['frame'], [energy_data['Ek'][i] for i in range(len(df_unificado))], label='Energía Cinética (J)', color='red')
+                ax_energy.set_xlabel('Frame')
+                ax_energy.set_ylabel('Energía (J)')
+                ax_energy.legend()
+                plt.tight_layout()
+                ruta_grafico_energy = os.path.join(carpeta_datos, f'movimiento_{punto}_energia_suavizado.png')
+                plt.savefig(ruta_grafico_energy)
+                plt.close()
 
             # Gráficos cartesianos para polares (suavizados)
             fig_vel_ang_suav, ax_vel_ang_suav = plt.subplots(figsize=(10, 6))
