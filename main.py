@@ -130,13 +130,6 @@ with mp_pose.Pose(
                     smoothed_x = xm * 0.001  # Factor por defecto si no se calculó
                     smoothed_y = ym * 0.001
 
-                
-                # Almacenar datos para gráficos
-                if 'energy_data' not in locals():
-                    energy_data = {'frame': [], 'Ep': [], 'Ek': []}
-                energy_data['frame'].append(frame_id)
-                energy_data['Ep'].append(Ep)
-                energy_data['Ek'].append(Ek)
 
                 # Calcular velocidad y aceleración a partir de posiciones suavizadas
                 vel_x = vel_y = acc_x = acc_y = 0
