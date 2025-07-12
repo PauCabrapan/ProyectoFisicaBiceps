@@ -390,11 +390,10 @@ with mp_pose.Pose(
 
         # Calcular energías al final del bucle
         m_total = m_ant + m_manc  # Masa total (antebrazo + mancuerna)
-        h_ref = yc * factor if frame_id == 0 and factor is not None else yc * 0.001  # Altura de referencia (inicial)
-        h = (smoothed_y - h_ref) if frame_id > 0 and factor is not None else 0  # Altura relativa en metros
-        Ep = m_total * g * h if factor is not None else 0  # Energía potencial en julios
-        r_d = math.hypot(xm - xc, ym - yc) * factor if factor is not None else 0  # Distancia codo-muñeca en metros
-        I = (1/3) * m_ant * (r_d ** 2) + m_manc * (r_d ** 2) if factor is not None else 0  # Momento de inercia total
+        h_ref = 0.605 #ym * factor if frame_id == 546 and factor is not None else yc * 0.001  # Altura de referencia (inicial)
+        h = (h_ref - smoothed_y) if frame_id > 0 and factor is not None else 0  # Altura relativa en metros
+        Ep = m_total * g * h if factor is not None else 0  # Energía potencial en jules
+        I = ((1/3) * m_ant * (r_d ** 2) + (1/3) * m_manc * ((2* r_d) ** 2)) if factor is not None else 0  # Momento de inercia total
 
         # Almacenar datos para gráficos
         if 'energy_data' not in locals():
@@ -403,23 +402,27 @@ with mp_pose.Pose(
         energy_data['Ep'].append(Ep)
 
         # Actualizar energía cinética con theta (usamos el theta calculado antes)
-        if previous_theta is not None and frame_id > 1 and factor is not None:
-            omega = (theta - previous_theta) / dt  # Velocidad angular
+        """if previous_theta is not None and frame_id > 0 and factor is not None:
+            omega = theta / dt  # Velocidad angular
             Ek = 0.5 * I * (omega ** 2)  # Energía cinética en julios
             energy_data['Ek'].append(Ek)  # Agregamos Ek aquí
         else:
-            energy_data['Ek'].append(0)  # Si no hay theta previo, ponemos 0
+            energy_data['Ek'].append(0)  # Si no hay theta previo, ponemos 0"""
+        
+        previous_r_d = r_d
+        
+        if previous_r_d is not None and previous_theta is not None and factor is not None:
+            # velocidad radial ṙ
+            r_dot = (r_d - previous_r_d) / dt
+            # velocidad angular θ̇
+            omega = (theta ) / dt
+            # Ek según la nueva fórmula
+            Ek = 0.5 * m_total * (r_dot**2 + (r_d * omega)**2)
+            print(f"Frame {frame_id}: r={r_d:.4f} m, ṙ={r_dot:.4f} m/s, θ̇={omega:.4f} rad/s, Ek={Ek:.4f} J")
+        else:
+            Ek = 0.0
+            print(f"Frame {frame_id}: sin previos, ṙ/θ̇→Ek=0")
 
-        # Actualizar energía cinética con theta (usamos el theta calculado antes)
-        if previous_theta is not None and frame_id > 1 and factor is not None:
-            dtheta = theta - previous_theta
-            omega = dtheta / dt  # Velocidad angular
-            Ek = 0.5 * I * (omega ** 2)  # Energía cinética en julios
-            energy_data['Ek'].append(Ek)  # Agregamos Ek aquí
-            print(f"Frame {frame_id}: theta={theta:.4f}, previous_theta={previous_theta:.4f}, dtheta={dtheta:.4f}, omega={omega:.4f}, I={I:.4f}, Ek={Ek:.4f}")
-        else:
-            energy_data['Ek'].append(0)  # Si no hay theta previo, ponemos 0
-            print(f"Frame {frame_id}: No hay theta previo, Ek=0")
 
 print(f"Trabajo total hecho por el bíceps: {work_mus:.2f} J")
 
@@ -676,16 +679,18 @@ if factor is not None:
 
             # Gráfico de Energía Cinética (suavizado)
             for punto in ['muneca']:  # Solo muneca para simplificar, podés agregar otros
-                fig_ek, ax_ek = plt.subplots(figsize=(10, 6))
+                """fig_ek, ax_ek = plt.subplots(figsize=(10, 6))
                 fig_ek.suptitle(f'Energía Cinética de {punto.capitalize()} (Suavizado)')
                 ek_values = [energy_data['Ek'][i] for i in range(len(df_unificado)) if i < len(energy_data['Ek'])]
-                ax_ek.plot(df_unificado['frame'], ek_values, label='Energía Cinética (J)', color='red')
+                ax_ek.plot(df_unificado['frame'], ek_values, label='Energía Cinética (J)', color='red')"""
+                frames_ek = energy_data['frame'][1:]
+                ek_values = energy_data['Ek'][1:]
+                fig_ek, ax_ek = plt.subplots(figsize=(10, 6))
+                ax_ek.set_title('Energía Cinética de Muneca (Suavizado)')
+                ax_ek.plot(frames_ek, ek_values, label='Energía Cinética (J)')
                 ax_ek.set_xlabel('Frame')
                 ax_ek.set_ylabel('Energía Cinética (J)')
                 ax_ek.legend()
-                # Forzar un rango inicial si los valores son muy pequeños
-                if max(ek_values) < 0.1 and min(ek_values) >= 0:
-                    ax_ek.set_ylim(0, 0.1)  # Ajuste manual si los valores son cercanos a cero
                 plt.tight_layout()
                 ruta_grafico_ek = os.path.join(carpeta_datos, f'movimiento_{punto}_energia_cinetica_suavizado.png')
                 plt.savefig(ruta_grafico_ek)
