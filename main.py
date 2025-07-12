@@ -393,7 +393,7 @@ with mp_pose.Pose(
         h_ref = 0.605 #ym * factor if frame_id == 546 and factor is not None else yc * 0.001  # Altura de referencia (inicial)
         h = (h_ref - smoothed_y) if frame_id > 0 and factor is not None else 0  # Altura relativa en metros
         Ep = m_total * g * h if factor is not None else 0  # Energía potencial en jules
-        I = ((1/3) * m_ant * (r_d ** 2) + (1/3) * m_manc * ((2* r_d) ** 2)) if factor is not None else 0  # Momento de inercia total
+        I = ((1/3) * m_ant * (r_d ** 2) +  m_manc * ((r_d) ** 2)) if factor is not None else 0  # Momento de inercia total
 
         # Almacenar datos para gráficos
         if 'energy_data' not in locals():
@@ -402,12 +402,12 @@ with mp_pose.Pose(
         energy_data['Ep'].append(Ep)
 
         # Actualizar energía cinética con theta (usamos el theta calculado antes)
-        """if previous_theta is not None and frame_id > 0 and factor is not None:
+        if previous_theta is not None and frame_id > 0 and factor is not None:
             omega = theta / dt  # Velocidad angular
             Ek = 0.5 * I * (omega ** 2)  # Energía cinética en julios
             energy_data['Ek'].append(Ek)  # Agregamos Ek aquí
         else:
-            energy_data['Ek'].append(0)  # Si no hay theta previo, ponemos 0"""
+            energy_data['Ek'].append(0)  # Si no hay theta previo, ponemos 0
         
         previous_r_d = r_d
         
