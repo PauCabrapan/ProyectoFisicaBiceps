@@ -410,17 +410,7 @@ with mp_pose.Pose(
         else:
             energy_data['Ek'].append(0)  # Si no hay theta previo, ponemos 0
         
-        if previous_r_d is not None and previous_theta is not None and factor is not None:
-            # velocidad radial ṙ
-            r_dot = (r_d - previous_r_d) / dt
-            # velocidad angular θ̇
-            omega = (theta ) / dt
-            # Ek según la nueva fórmula
-            Ek = 0.5 * m_total * (r_dot**2 + (r_d * omega)**2)
-            print(f"Frame {frame_id}: r={r_d:.4f} m, ṙ={r_dot:.4f} m/s, θ̇={omega:.4f} rad/s, Ek={Ek:.4f} J")
-        else:
-            Ek = 0.0
-            print(f"Frame {frame_id}: sin previos, ṙ/θ̇→Ek=0")
+        
 
         previous_r_d = r_d
         previous_theta = theta
