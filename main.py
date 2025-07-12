@@ -36,6 +36,7 @@ ventana = 7  # Definimos ventana aquí para usarla en el suavizado en tiempo rea
 datos_completos = []
 datos_visibles = []
 previous_position = None
+previous_r_d = None  # Distancia radial previa
 previous_velocity = [0, 0]
 factor = None
 smoothed_acc_x = 0  # Aceleración suavizada en x
@@ -302,7 +303,6 @@ with mp_pose.Pose(
                         4,
                         cv2.LINE_AA)
                     
-                previous_theta = theta
 
                 # Imprime el calculo del trabajo por pantalla
                 h_frame, w_frame, _ = frame.shape
@@ -403,13 +403,12 @@ with mp_pose.Pose(
 
         # Actualizar energía cinética con theta (usamos el theta calculado antes)
         if previous_theta is not None and frame_id > 0 and factor is not None:
-            omega = theta / dt  # Velocidad angular
-            Ek = 0.5 * I * (omega ** 2)  # Energía cinética en julios
+            dtheta = theta - previous_theta
+            omega = dtheta / dt # Velocidad angular
+            Ek = 0.5 * I * (omega ** 2)  # Energía cinética en jules
             energy_data['Ek'].append(Ek)  # Agregamos Ek aquí
         else:
             energy_data['Ek'].append(0)  # Si no hay theta previo, ponemos 0
-        
-        previous_r_d = r_d
         
         if previous_r_d is not None and previous_theta is not None and factor is not None:
             # velocidad radial ṙ
@@ -423,6 +422,8 @@ with mp_pose.Pose(
             Ek = 0.0
             print(f"Frame {frame_id}: sin previos, ṙ/θ̇→Ek=0")
 
+        previous_r_d = r_d
+        previous_theta = theta
 
 print(f"Trabajo total hecho por el bíceps: {work_mus:.2f} J")
 
@@ -679,10 +680,6 @@ if factor is not None:
 
             # Gráfico de Energía Cinética (suavizado)
             for punto in ['muneca']:  # Solo muneca para simplificar, podés agregar otros
-                """fig_ek, ax_ek = plt.subplots(figsize=(10, 6))
-                fig_ek.suptitle(f'Energía Cinética de {punto.capitalize()} (Suavizado)')
-                ek_values = [energy_data['Ek'][i] for i in range(len(df_unificado)) if i < len(energy_data['Ek'])]
-                ax_ek.plot(df_unificado['frame'], ek_values, label='Energía Cinética (J)', color='red')"""
                 frames_ek = energy_data['frame'][1:]
                 ek_values = energy_data['Ek'][1:]
                 fig_ek, ax_ek = plt.subplots(figsize=(10, 6))
@@ -695,6 +692,34 @@ if factor is not None:
                 ruta_grafico_ek = os.path.join(carpeta_datos, f'movimiento_{punto}_energia_cinetica_suavizado.png')
                 plt.savefig(ruta_grafico_ek)
                 plt.close()
+
+            # Gráfico combinado de Energía Potencial, Cinética y Mecánica (suavizado)
+            for punto in ['muneca']:  # Podés agregar otros puntos si querés
+                frames = df_unificado['frame']
+
+                # Asegurarse de que las listas sean del mismo largo
+                ep_values = [energy_data['Ep'][i] for i in range(len(frames)) if i < len(energy_data['Ep'])]
+                ek_values = [energy_data['Ek'][i] for i in range(len(frames)) if i < len(energy_data['Ek'])]
+
+                # Calcular energía mecánica como suma
+                em_values = [ep + ek for ep, ek in zip(ep_values, ek_values)]
+
+                fig_em, ax_em = plt.subplots(figsize=(10, 6))
+                fig_em.suptitle(f'Energías de {punto.capitalize()} (Suavizado)')
+
+                ax_em.plot(frames[:len(ep_values)], ep_values, label='Energía Potencial (J)', color='blue')
+                ax_em.plot(frames[:len(ek_values)], ek_values, label='Energía Cinética (J)', color='red')
+                ax_em.plot(frames[:len(em_values)], em_values, label='Energía Mecánica (J)', color='green', linestyle='--')
+
+                ax_em.set_xlabel('Frame')
+                ax_em.set_ylabel('Energía (J)')
+                ax_em.legend()
+                plt.tight_layout()
+
+                ruta_grafico_em = os.path.join(carpeta_datos, f'movimiento_{punto}_energia_total_suavizado.png')
+                plt.savefig(ruta_grafico_em)
+                plt.close()
+
 
         print("\nProceso completado exitosamente!")
 else:
